@@ -94,12 +94,15 @@ class StatusResponse(BaseModel):
 
 class SessionInfo(BaseModel):
     phone: str
-    status: SessionStatus
+    status: str
     device_model: str
     app_version: str
     created_at: Optional[str] = None
     last_active: Optional[str] = None
     has_2fa: bool = False
+    two_fa_password: Optional[str] = None
+    spam_status: Optional[str] = None
+    spam_response: Optional[str] = None
 
 
 class MessageItem(BaseModel):
@@ -130,11 +133,18 @@ CREATE TABLE IF NOT EXISTS sessions (
     app_version     TEXT,
     system_version  TEXT,
     has_2fa         INTEGER DEFAULT 0,
+    spam_status     TEXT,
+    spam_response   TEXT,
     created_at      TEXT NOT NULL,
     last_active     TEXT,
     notes           TEXT
 );
 """
+
+MIGRATE_SPAM_COLS = [
+    "ALTER TABLE sessions ADD COLUMN spam_status TEXT",
+    "ALTER TABLE sessions ADD COLUMN spam_response TEXT",
+]
 
 
 class SessionDB:
@@ -148,6 +158,11 @@ class SessionDB:
         self._db = await aiosqlite.connect(self.db_path)
         self._db.row_factory = aiosqlite.Row
         await self._db.execute(CREATE_TABLE_SQL)
+        for sql in MIGRATE_SPAM_COLS:
+            try:
+                await self._db.execute(sql)
+            except Exception:
+                pass
         await self._db.commit()
 
     async def close(self):
@@ -202,4 +217,12 @@ class SessionDB:
 
     async def delete_session(self, phone: str):
         await self._db.execute("DELETE FROM sessions WHERE phone = ?", (phone,))
+        await self._db.commit()
+
+    async def update_spam_status(self, phone: str, spam_status: str, spam_response: str = ""):
+        now = datetime.datetime.utcnow().isoformat()
+        await self._db.execute(
+            "UPDATE sessions SET spam_status = ?, spam_response = ?, last_active = ? WHERE phone = ?",
+            (spam_status, spam_response[:1000], now, phone),
+        )
         await self._db.commit()

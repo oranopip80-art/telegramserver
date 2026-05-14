@@ -66,19 +66,19 @@ app = FastAPI(
 @app.post("/auth/request-code", response_model=StatusResponse)
 async def request_code(req: PhoneRequest):
     result = await reg_engine.request_code(req.phone)
-    return StatusResponse(**result, phase=result.get("phase"))
+    return StatusResponse(**result)
 
 
 @app.post("/auth/submit-code", response_model=StatusResponse)
 async def submit_code(req: CodeSubmit):
     result = await reg_engine.submit_code(req.phone, req.code)
-    return StatusResponse(**result, phase=result.get("phase"))
+    return StatusResponse(**result)
 
 
 @app.post("/auth/submit-2fa", response_model=StatusResponse)
 async def submit_2fa(req: TwoFASubmit):
     result = await reg_engine.submit_2fa(req.phone, req.password)
-    return StatusResponse(**result, phase=result.get("phase"))
+    return StatusResponse(**result)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

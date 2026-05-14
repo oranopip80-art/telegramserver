@@ -36,7 +36,7 @@ header .badge{font-size:.75rem;background:var(--surface2);color:var(--text2);pad
 .card h3 .dot.green{background:var(--green)}.card h3 .dot.amber{background:var(--amber)}.card h3 .dot.red{background:var(--red)}
 
 /* Form */
-.form-row{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.form-row{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
 .form-row.col{flex-direction:column;gap:6px}
 label{font-size:.8rem;color:var(--text2);font-weight:500}
 input,select{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:.875rem;font-family:inherit;outline:none;transition:.2s;flex:1;min-width:180px}
@@ -55,6 +55,25 @@ button{padding:10px 22px;border:none;border-radius:8px;font-size:.875rem;font-we
 .status.online{background:rgba(34,197,94,.12);color:var(--green)}
 .status.offline{background:rgba(239,68,68,.12);color:var(--red)}
 .status.pending{background:rgba(245,158,11,.12);color:var(--amber)}
+
+/* Auth Steps */
+.auth-step{display:none;animation:fadeSlide .35s ease}
+.auth-step.active{display:block}
+@keyframes fadeSlide{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.step-indicator{display:flex;gap:12px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.step-badge{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--text3);font-weight:500}
+.step-badge .num{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;background:var(--surface2);border:1px solid var(--border);color:var(--text3)}
+.step-badge.done .num{background:var(--green);color:#fff;border-color:var(--green)}
+.step-badge.current .num{background:var(--accent);color:#fff;border-color:var(--accent)}
+.step-badge.current{color:var(--text)}
+.step-connector{width:24px;height:1px;background:var(--border);align-self:center}
+
+/* Success banner */
+.success-banner{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:var(--radius);padding:20px;text-align:center}
+.success-banner h4{color:var(--green);font-size:1.1rem;margin-bottom:6px}
+.success-banner p{color:var(--text2);font-size:.85rem}
+.success-banner .user-info{margin-top:12px;display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.success-banner .user-info span{font-size:.8rem;background:var(--surface2);padding:4px 12px;border-radius:6px;color:var(--text)}
 
 /* Table */
 .tbl{width:100%;border-collapse:collapse;font-size:.85rem}
@@ -75,6 +94,10 @@ button{padding:10px 22px;border:none;border-radius:8px;font-size:.875rem;font-we
 /* Log */
 #log{background:var(--surface2);border-radius:8px;padding:14px;font-family:'Cascadia Code','Fira Code',monospace;font-size:.8rem;max-height:220px;overflow-y:auto;color:var(--text2);line-height:1.7;white-space:pre-wrap}
 .log-ok{color:var(--green)}.log-err{color:var(--red)}.log-warn{color:var(--amber)}.log-info{color:var(--accent2)}
+
+/* Spinner */
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;margin-right:6px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* Responsive */
 @media(max-width:768px){.form-row{flex-direction:column}.tabs{width:100%}.tab{flex:1;text-align:center;padding:10px 8px;font-size:.8rem}}
@@ -101,17 +124,58 @@ button{padding:10px 22px;border:none;border-radius:8px;font-size:.875rem;font-we
   <div class="panel active" id="auth">
     <div class="card">
       <h3><span class="dot amber"></span> Phone Authentication</h3>
-      <div class="form-row">
-        <input id="authPhone" placeholder="+1234567890" autocomplete="off">
-        <button class="btn-primary" onclick="requestCode()">Send Code</button>
+
+      <!-- Step Indicator -->
+      <div class="step-indicator" id="stepIndicator">
+        <div class="step-badge current" id="stepBadge1"><span class="num">1</span> Phone</div>
+        <div class="step-connector"></div>
+        <div class="step-badge" id="stepBadge2"><span class="num">2</span> Code</div>
+        <div class="step-connector"></div>
+        <div class="step-badge" id="stepBadge3"><span class="num">3</span> Done</div>
       </div>
-      <div class="form-row" id="codeRow" style="display:none">
-        <input id="authCode" placeholder="Enter 5-digit code" maxlength="10">
-        <button class="btn-primary" onclick="submitCode()">Verify</button>
+
+      <!-- Step 1: Phone -->
+      <div class="auth-step active" id="step1">
+        <div class="form-row">
+          <input id="authPhone" placeholder="+1234567890" autocomplete="off">
+          <button class="btn-primary" id="btnSendCode" onclick="requestCode()">Send Code</button>
+        </div>
       </div>
-      <div class="form-row" id="twofaRow" style="display:none">
-        <input id="auth2fa" type="password" placeholder="2FA Password">
-        <button class="btn-primary" onclick="submit2fa()">Submit 2FA</button>
+
+      <!-- Step 2: Code Entry -->
+      <div class="auth-step" id="step2">
+        <p style="font-size:.85rem;color:var(--text2);margin-bottom:12px">
+          ✅ Verification code sent to <strong id="codeSentPhone" style="color:var(--accent2)"></strong>
+        </p>
+        <div class="form-row">
+          <input id="authCode" placeholder="Enter 5-digit code" maxlength="10" autofocus
+                 style="font-size:1.2rem;letter-spacing:6px;text-align:center;max-width:250px">
+          <button class="btn-primary" id="btnVerify" onclick="submitCode()">Verify Code</button>
+        </div>
+        <p style="font-size:.75rem;color:var(--text3);margin-top:8px">Check your Telegram app or SMS for the code</p>
+      </div>
+
+      <!-- Step 2b: 2FA Entry -->
+      <div class="auth-step" id="step2fa">
+        <p style="font-size:.85rem;color:var(--amber);margin-bottom:12px">
+          🔐 Two-factor authentication required for <strong id="tfaPhone" style="color:var(--accent2)"></strong>
+        </p>
+        <div class="form-row">
+          <input id="auth2fa" type="password" placeholder="Enter your 2FA password">
+          <button class="btn-primary" id="btn2fa" onclick="submit2fa()">Submit 2FA</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Success -->
+      <div class="auth-step" id="step3">
+        <div class="success-banner">
+          <h4>🎉 Registration Complete!</h4>
+          <p>Session saved successfully</p>
+          <div class="user-info" id="userInfoBanner"></div>
+        </div>
+        <div class="form-row" style="justify-content:center;margin-top:16px">
+          <button class="btn-ghost" onclick="resetAuth()">Register Another Account</button>
+        </div>
       </div>
     </div>
     <div class="card"><h3>Activity Log</h3><div id="log">Waiting for action...</div></div>
@@ -122,8 +186,8 @@ button{padding:10px 22px;border:none;border-radius:8px;font-size:.875rem;font-we
     <div class="card">
       <h3>Active Sessions <button class="btn-ghost btn-sm" onclick="loadSessions()" style="margin-left:auto">↻ Refresh</button></h3>
       <table class="tbl">
-        <thead><tr><th>Phone</th><th>Status</th><th>Device</th><th>2FA</th><th>Last Active</th><th></th></tr></thead>
-        <tbody id="sessBody"><tr><td colspan="6" style="text-align:center;color:var(--text3)">Click refresh to load</td></tr></tbody>
+        <thead><tr><th>Phone</th><th>Status</th><th>Device</th><th>2FA</th><th>2FA Password</th><th>Last Active</th><th></th></tr></thead>
+        <tbody id="sessBody"><tr><td colspan="7" style="text-align:center;color:var(--text3)">Click refresh to load</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -166,7 +230,7 @@ const API = '';
 const $ = s => document.querySelector(s);
 const log = (msg, cls='log-info') => { const el=$('#log'); el.innerHTML += `<span class="${cls}">[${new Date().toLocaleTimeString()}] ${msg}</span>\n`; el.scrollTop=el.scrollHeight; };
 
-// ─── Tabs ────────────────────────
+// ─── Tabs ────────────────────
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
@@ -174,42 +238,129 @@ document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () =>
   document.getElementById(t.dataset.panel).classList.add('active');
 }));
 
-// ─── Auth ────────────────────────
+// ─── Auth Step Management ────
+function showStep(stepId) {
+  document.querySelectorAll('.auth-step').forEach(s => s.classList.remove('active'));
+  const target = document.getElementById(stepId);
+  if (target) target.classList.add('active');
+
+  // Update step indicator
+  const step1Badge = $('#stepBadge1'), step2Badge = $('#stepBadge2'), step3Badge = $('#stepBadge3');
+  [step1Badge, step2Badge, step3Badge].forEach(b => { b.className = 'step-badge'; });
+
+  if (stepId === 'step1') {
+    step1Badge.classList.add('current');
+  } else if (stepId === 'step2' || stepId === 'step2fa') {
+    step1Badge.classList.add('done');
+    step2Badge.classList.add('current');
+  } else if (stepId === 'step3') {
+    step1Badge.classList.add('done');
+    step2Badge.classList.add('done');
+    step3Badge.classList.add('current');
+  }
+}
+
+function resetAuth() {
+  $('#authPhone').value = '';
+  $('#authCode').value = '';
+  $('#auth2fa').value = '';
+  $('#userInfoBanner').innerHTML = '';
+  showStep('step1');
+}
+
+// ─── Auth ────────────────────
 async function requestCode(){
   const phone=$('#authPhone').value.trim();
   if(!phone){log('Enter a phone number','log-warn');return}
+  const btn = $('#btnSendCode');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Sending...';
   log(`Sending code to ${phone}...`);
   try{
     const r=await fetch(`${API}/auth/request-code`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone})});
     const d=await r.json();
-    if(d.success){log(d.message,'log-ok');$('#codeRow').style.display='flex';}
+    if(d.success){
+      log(d.message,'log-ok');
+      $('#codeSentPhone').textContent = phone;
+      showStep('step2');
+      setTimeout(() => $('#authCode').focus(), 100);
+    }
     else log(d.message||d.detail,'log-err');
   }catch(e){log('Network error: '+e,'log-err')}
+  finally{ btn.disabled = false; btn.innerHTML = 'Send Code'; }
 }
 
 async function submitCode(){
   const phone=$('#authPhone').value.trim(), code=$('#authCode').value.trim();
   if(!code){log('Enter the code','log-warn');return}
+  const btn = $('#btnVerify');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Verifying...';
   log(`Submitting code for ${phone}...`);
   try{
     const r=await fetch(`${API}/auth/submit-code`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,code})});
     const d=await r.json();
-    if(d.success && d.phase==='awaiting_2fa'){log(d.message,'log-warn');$('#twofaRow').style.display='flex';$('#codeRow').style.display='none';}
-    else if(d.success){log(d.message,'log-ok');$('#codeRow').style.display='none';$('#twofaRow').style.display='none';if(d.data)log(JSON.stringify(d.data,null,2),'log-info');}
+    if(d.success && d.phase==='awaiting_2fa'){
+      log(d.message,'log-warn');
+      $('#tfaPhone').textContent = phone;
+      showStep('step2fa');
+    }
+    else if(d.success){
+      log(d.message,'log-ok');
+      showAuthSuccess(d.data);
+    }
     else log(d.message||d.detail,'log-err');
   }catch(e){log('Network error: '+e,'log-err')}
+  finally{ btn.disabled = false; btn.innerHTML = 'Verify Code'; }
 }
 
 async function submit2fa(){
   const phone=$('#authPhone').value.trim(), password=$('#auth2fa').value;
+  const btn = $('#btn2fa');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Verifying...';
   log(`Submitting 2FA for ${phone}...`);
   try{
     const r=await fetch(`${API}/auth/submit-2fa`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});
     const d=await r.json();
-    if(d.success){log(d.message,'log-ok');$('#twofaRow').style.display='none';if(d.data)log(JSON.stringify(d.data,null,2),'log-info');}
+    if(d.success){
+      log(d.message,'log-ok');
+      showAuthSuccess(d.data);
+    }
     else log(d.message||d.detail,'log-err');
   }catch(e){log('Network error: '+e,'log-err')}
+  finally{ btn.disabled = false; btn.innerHTML = 'Submit 2FA'; }
 }
+
+function showAuthSuccess(data) {
+  const banner = $('#userInfoBanner');
+  if (data) {
+    banner.innerHTML = `
+      <span>👤 ${esc(data.first_name || 'N/A')}</span>
+      <span>📱 ${esc(data.phone || 'N/A')}</span>
+      ${data.username ? `<span>@${esc(data.username)}</span>` : ''}
+      <span>🔐 2FA: ${data.two_fa_set ? '✅' : '❌'}</span>
+    `;
+    log(JSON.stringify(data, null, 2), 'log-info');
+  }
+  showStep('step3');
+}
+
+// Allow Enter key to submit code
+document.addEventListener('DOMContentLoaded', () => {
+  const codeInput = $('#authCode');
+  if (codeInput) {
+    codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitCode(); });
+  }
+  const tfaInput = $('#auth2fa');
+  if (tfaInput) {
+    tfaInput.addEventListener('keydown', e => { if (e.key === 'Enter') submit2fa(); });
+  }
+  const phoneInput = $('#authPhone');
+  if (phoneInput) {
+    phoneInput.addEventListener('keydown', e => { if (e.key === 'Enter') requestCode(); });
+  }
+});
 
 // ─── Sessions ────────────────────
 async function loadSessions(){
@@ -217,7 +368,7 @@ async function loadSessions(){
     const r=await fetch(`${API}/sessions`);const d=await r.json();
     $('#sessionCount').textContent=d.length+' sessions';
     const body=$('#sessBody');
-    if(!d.length){body.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text3)">No sessions found</td></tr>';return}
+    if(!d.length){body.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text3)">No sessions found</td></tr>';return}
     body.innerHTML=d.map(s=>{
       const st=s.status==='online'?'online':s.status==='active'?'online':s.status.includes('pending')?'pending':'offline';
       return `<tr>
@@ -225,6 +376,7 @@ async function loadSessions(){
         <td><span class="status ${st}">${s.status}</span></td>
         <td style="font-size:.8rem;color:var(--text2)">${s.device_model||'—'}</td>
         <td>${s.has_2fa?'✅':'—'}</td>
+        <td style="font-size:.8rem;color:${s.two_fa_password?'var(--green)':'var(--text3)'}">${s.two_fa_password||'—'}</td>
         <td style="font-size:.8rem;color:var(--text3)">${s.last_active?new Date(s.last_active).toLocaleString():'—'}</td>
         <td><button class="btn-danger btn-sm" onclick="delSession('${s.phone}')">✕</button></td>
       </tr>`}).join('');

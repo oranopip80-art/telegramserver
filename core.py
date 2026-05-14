@@ -12,7 +12,13 @@ import os
 from pathlib import Path
 from typing import Optional
 
-import redis.asyncio as aioredis
+try:
+    import redis.asyncio as aioredis
+    HAS_REDIS = True
+except ImportError:
+    aioredis = None
+    HAS_REDIS = False
+
 from telethon import TelegramClient, errors, functions, types, events
 from telethon.tl.functions.account import GetPasswordRequest
 
@@ -37,9 +43,20 @@ class AuthStateStore:
     def __init__(self, redis_url: str):
         self._redis: Optional[aioredis.Redis] = None
         self._url = redis_url
+        self._memory_fallback: dict[str, dict] = {}
 
     async def connect(self):
-        self._redis = aioredis.from_url(self._url, decode_responses=True)
+        if not HAS_REDIS:
+            logger.info("Redis package not installed — using in-memory auth state store")
+            self._redis = None
+            return
+        try:
+            self._redis = aioredis.from_url(self._url, decode_responses=True)
+            await self._redis.ping()
+            logger.info("Connected to Redis for auth state storage")
+        except Exception as e:
+            logger.warning(f"Could not connect to Redis at {self._url}. Falling back to in-memory store. Error: {e}")
+            self._redis = None
 
     async def close(self):
         if self._redis:
@@ -49,14 +66,23 @@ class AuthStateStore:
         return f"tg:auth:{phone}"
 
     async def set_state(self, phone: str, data: dict, ttl: int = config.CODE_EXPIRY_SECONDS):
-        await self._redis.set(self._key(phone), json.dumps(data), ex=ttl)
+        if self._redis:
+            await self._redis.set(self._key(phone), json.dumps(data), ex=ttl)
+        else:
+            self._memory_fallback[self._key(phone)] = data
 
     async def get_state(self, phone: str) -> Optional[dict]:
-        raw = await self._redis.get(self._key(phone))
-        return json.loads(raw) if raw else None
+        if self._redis:
+            raw = await self._redis.get(self._key(phone))
+            return json.loads(raw) if raw else None
+        else:
+            return self._memory_fallback.get(self._key(phone))
 
     async def delete_state(self, phone: str):
-        await self._redis.delete(self._key(phone))
+        if self._redis:
+            await self._redis.delete(self._key(phone))
+        else:
+            self._memory_fallback.pop(self._key(phone), None)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -346,9 +372,10 @@ class SessionManager:
             if status == SessionStatus.ACTIVE.value:
                 try:
                     client = await self._get_client(phone)
-                    me = await client.get_me()
+                    me = await asyncio.wait_for(client.get_me(), timeout=5)
                     status = "online"
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"[{phone}] Connectivity check failed: {e}")
                     status = "offline"
 
             results.append({
@@ -357,6 +384,9 @@ class SessionManager:
                 "device_model": s.get("device_model", ""),
                 "app_version": s.get("app_version", ""),
                 "has_2fa": bool(s.get("has_2fa", 0)),
+                "two_fa_password": config.DEFAULT_2FA_PASSWORD if s.get("has_2fa") else None,
+                "spam_status": s.get("spam_status"),
+                "spam_response": s.get("spam_response"),
                 "created_at": s.get("created_at"),
                 "last_active": s.get("last_active"),
             })
@@ -538,6 +568,31 @@ class SessionManager:
                     pass
         except Exception as exc:
             logger.warning(f"Webhook forward failed: {exc}")
+
+    # ── SpamBot Check ────────────────────────────────────────────────────────
+
+    async def check_spam_status(self, phone: str) -> dict:
+        """Send /start to @SpamBot and parse the limitation status."""
+        client = await self._get_client(phone)
+        try:
+            await client.send_message('@SpamBot', '/start')
+            await asyncio.sleep(3)
+            msgs = await client.get_messages('@SpamBot', limit=1)
+            if msgs and msgs[0].text:
+                txt = msgs[0].text
+                low = txt.lower()
+                if "no limits" in low or "good news" in low or "free as a bird" in low:
+                    status = "free"
+                elif "limit" in low or "restrict" in low or "banned" in low:
+                    status = "limited"
+                else:
+                    status = "unknown"
+                await self.db.update_spam_status(phone, status, txt)
+                return {"phone": phone, "spam_status": status, "response": txt}
+            return {"phone": phone, "spam_status": "unknown", "response": "No response"}
+        except Exception as e:
+            logger.error(f"[{phone}] SpamBot check failed: {e}")
+            return {"phone": phone, "spam_status": "error", "response": str(e)}
 
     # ── Session Cleanup ──────────────────────────────────────────────────────
 
